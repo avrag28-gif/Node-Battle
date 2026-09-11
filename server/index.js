@@ -92,16 +92,26 @@ function frontendState() {
   };
 }
 
-app.get('/api/status', (_, res) => res.json(frontendState()));
+app.get('/api/status', (_, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.json(frontendState());
+});
 
 function firstPlayerId(payload = {}) {
   return payload.userId || payload.platformUserId || game.players.keys().next().value;
 }
 
 function performAction(action, payload = {}) {
+  const normalized = String(action || '').trim().toUpperCase();
+  if (normalized === 'JOIN') {
+    // A simulated gift without an explicit platform ID represents a new viewer.
+    // Never reuse the first existing viewer's ID for another JOIN click.
+    const id = payload.userId || payload.platformUserId || `dev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return game.addPlayer(id, payload.username || `Viewer_${Math.floor(Math.random() * 90 + 10)}`, payload.avatarUrl || '');
+  }
+
   const id = firstPlayerId(payload);
-  switch (String(action).toUpperCase()) {
-    case 'JOIN': return game.addPlayer(id || `dev-${Date.now()}`, payload.username || 'Viewer', payload.avatarUrl || '');
+  switch (normalized) {
     case 'ATTACK': return { ok: game.attack(id, payload.quantity || 1) };
     case 'SPAM_ATTACK': return { ok: game.attack(id, 5) };
     case 'HEAL': return { ok: game.heal(id) };
@@ -110,19 +120,34 @@ function performAction(action, payload = {}) {
     case 'SPECIAL': return { ok: game.special(id) };
     case 'REVIVE': return { ok: game.revive(id) };
     case 'RESET_MATCH': game.resetMatch(); return { ok: true };
+    case 'SIMULATE_4_JOIN': {
+      const joined = [];
+      for (let i = 0; i < 4; i++) {
+        if (game.players.size >= 4) break;
+        const result = performAction('JOIN', { username: `Viewer_${i + 1}` });
+        if (result.ok) joined.push(result.player);
+      }
+      return { ok: joined.length > 0, players: joined };
+    }
     default: return { ok: false, reason: 'UNKNOWN_ACTION' };
   }
 }
 
-app.post('/api/dev/event', (req, res) => res.json({ ...performAction(req.body?.action, req.body?.payload || {}), state: frontendState() }));
-app.post('/api/dev/join', (req, res) => res.json({ ...performAction('JOIN', req.body || {}), state: frontendState() }));
-app.post('/api/dev/attack', (req, res) => res.json({ ...performAction('ATTACK', req.body || {}), state: frontendState() }));
-app.post('/api/dev/heal', (req, res) => res.json({ ...performAction('HEAL', req.body || {}), state: frontendState() }));
-app.post('/api/dev/buff', (req, res) => res.json({ ...performAction('DAMAGE_BUFF', req.body || {}), state: frontendState() }));
-app.post('/api/dev/evolve', (req, res) => res.json({ ...performAction('EVOLVE_MANUAL', req.body || {}), state: frontendState() }));
-app.post('/api/dev/special', (req, res) => res.json({ ...performAction('SPECIAL', req.body || {}), state: frontendState() }));
-app.post('/api/dev/revive', (req, res) => res.json({ ...performAction('REVIVE', req.body || {}), state: frontendState() }));
-app.post('/api/dev/reset', (_, res) => res.json({ ...performAction('RESET_MATCH'), state: frontendState() }));
+function sendAction(req, res, action, payload = {}) {
+  const result = performAction(action, payload);
+  res.set('Cache-Control', 'no-store');
+  res.json({ ...result, state: frontendState() });
+}
+
+app.post('/api/dev/event', (req, res) => sendAction(req, res, req.body?.action, req.body?.payload || {}));
+app.post('/api/dev/join', (req, res) => sendAction(req, res, 'JOIN', req.body || {}));
+app.post('/api/dev/attack', (req, res) => sendAction(req, res, 'ATTACK', req.body || {}));
+app.post('/api/dev/heal', (req, res) => sendAction(req, res, 'HEAL', req.body || {}));
+app.post('/api/dev/buff', (req, res) => sendAction(req, res, 'DAMAGE_BUFF', req.body || {}));
+app.post('/api/dev/evolve', (req, res) => sendAction(req, res, 'EVOLVE_MANUAL', req.body || {}));
+app.post('/api/dev/special', (req, res) => sendAction(req, res, 'SPECIAL', req.body || {}));
+app.post('/api/dev/revive', (req, res) => sendAction(req, res, 'REVIVE', req.body || {}));
+app.post('/api/dev/reset', (_, res) => sendAction(_, res, 'RESET_MATCH'));
 app.post('/api/dev/bot', (req, res) => { botMode = Boolean(req.body?.enable); res.json({ ok: true, state: frontendState() }); });
 app.post('/api/tiktok/connect', (req, res) => { connectedTikTokUser = String(req.body?.username || '').trim(); res.json({ ok: true, state: frontendState() }); });
 
@@ -133,7 +158,6 @@ app.get('/api/events', (req, res) => {
   req.on('close', () => sseClients.delete(res));
 });
 
-// Platform-neutral TikTok event bridge. Keep TikTok credentials outside the browser.
 app.post('/api/events/tiktok', (req, res) => {
   if (EVENT_SECRET && req.get('x-event-secret') !== EVENT_SECRET) return res.status(401).json({ ok:false, error:'UNAUTHORIZED' });
   const e = req.body || {};
