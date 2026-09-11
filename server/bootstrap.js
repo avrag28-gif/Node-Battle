@@ -1,7 +1,9 @@
-import { existsSync } from 'fs';
-import { spawnSync } from 'child_process';
+import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const viteBin = new URL('../node_modules/vite/bin/vite.js', import.meta.url);
+const viteBin = fileURLToPath(new URL('../node_modules/vite/bin/vite.js', import.meta.url));
+const syncScript = fileURLToPath(new URL('../scripts/sync-frontend.mjs', import.meta.url));
 
 function run(label, command, args) {
   console.log(label);
@@ -21,9 +23,9 @@ if (!existsSync(new URL('../node_modules/express/package.json', import.meta.url)
   run('Dependencies missing — running npm install...', npm, ['install']);
 }
 
-// Run the sync/build programs directly. This avoids the Windows npm.cmd
-// child-process issue that was causing `npm run live` to return immediately.
-run('Syncing original Battle-Tank frontend...', process.execPath, [new URL('../scripts/sync-frontend.mjs', import.meta.url).pathname]);
-run('Building original Battle-Tank frontend...', process.execPath, [viteBin.pathname, 'build']);
+// fileURLToPath is required on Windows: URL.pathname turns C:\... into /C:/...,
+// which Node otherwise interpreted as C:\C:\....
+run('Syncing original Battle-Tank frontend...', process.execPath, [syncScript]);
+run('Building original Battle-Tank frontend...', process.execPath, [viteBin, 'build']);
 
 await import('./index.js');
