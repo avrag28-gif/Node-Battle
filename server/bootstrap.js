@@ -18,13 +18,17 @@ function run(label, command, args) {
   }
 }
 
-if (!existsSync(new URL('../node_modules/express/package.json', import.meta.url))) {
+// node_modules may exist but be incomplete after an interrupted install.
+const depsReady =
+  existsSync(new URL('../node_modules/express/package.json', import.meta.url)) &&
+  existsSync(new URL('../node_modules/vite/bin/vite.js', import.meta.url)) &&
+  existsSync(new URL('../node_modules/react/package.json', import.meta.url));
+
+if (!depsReady) {
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  run('Dependencies missing — running npm install...', npm, ['install']);
+  run('Dependencies incomplete — running npm install...', npm, ['install']);
 }
 
-// fileURLToPath is required on Windows: URL.pathname turns C:\... into /C:/...,
-// which Node otherwise interpreted as C:\C:\....
 run('Syncing original Battle-Tank frontend...', process.execPath, [syncScript]);
 run('Building original Battle-Tank frontend...', process.execPath, [viteBin, 'build']);
 
