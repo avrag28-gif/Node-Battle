@@ -1,17 +1,104 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
 
 const app = document.getElementById('app');
+const labels = document.getElementById('labels');
 const scene = new THREE.Scene();
-const camera = new THREE.OrthographicCamera(-14,14,10,-10,0.1,100);
-camera.position.set(0,18,14); camera.lookAt(0,0,0);
-const renderer = new THREE.WebGLRenderer({ antialias:true }); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(innerWidth,innerHeight); renderer.shadowMap.enabled=true; app.prepend(renderer.domElement);
-scene.add(new THREE.HemisphereLight(0xffffff,0x222222,2)); const sun=new THREE.DirectionalLight(0xffffff,3); sun.position.set(5,15,5); sun.castShadow=true; scene.add(sun);
-const arena=new THREE.Mesh(new THREE.BoxGeometry(24,.4,18),new THREE.MeshStandardMaterial({color:0x59614a,roughness:1})); arena.position.y=-.25; arena.receiveShadow=true; scene.add(arena);
-const grid=new THREE.GridHelper(24,12,0x999999,0x555555); grid.position.y=.01; scene.add(grid);
-const tankMeshes=new Map(); let state=null;
-function materialFor(slot){const colors=[0xd94b4b,0x4b78d9,0x49b96b,0xe0c64c,0xa65ad9];return new THREE.MeshStandardMaterial({color:colors[slot%colors.length],roughness:.7});}
-function makeTank(p){const g=new THREE.Group(); const body=new THREE.Mesh(new THREE.BoxGeometry(1.35,.5,1.8),materialFor(p.slot)); body.position.y=.35; body.castShadow=true; g.add(body); const turret=new THREE.Mesh(new THREE.CylinderGeometry(.48,.48,.25,12),materialFor(p.slot)); turret.rotation.x=Math.PI/2; turret.position.y=.7; g.add(turret); const barrel=new THREE.Mesh(new THREE.BoxGeometry(.18,.18,1.15),materialFor(p.slot)); barrel.position.set(0,.72,.65); g.add(barrel); const label=document.createElement('div'); label.style.cssText='position:absolute;transform:translate(-50%,-50%);color:white;font-weight:800;font-size:13px;text-shadow:0 2px 4px #000'; label.textContent=p.username; g.userData.label=label; g.userData.playerId=p.id; scene.add(g); tankMeshes.set(p.id,g); return g;}
-function update(s){state=s; document.getElementById('theme').textContent=`${s.theme.name} • ${s.players.length}/5 TANKS`; const m=Math.floor(s.remaining/60),sec=s.remaining%60; document.getElementById('timer').textContent=`${m}:${String(sec).padStart(2,'0')}`; const seen=new Set(); for(const p of s.players){let g=tankMeshes.get(p.id)||makeTank(p); seen.add(p.id); g.position.set(p.x,0,p.z); g.rotation.y=-THREE.MathUtils.degToRad(p.angle); g.scale.setScalar(1+(p.evolution-1)*.12); g.visible=p.status==='ALIVE';} for(const [id,g] of tankMeshes) if(!seen.has(id)){scene.remove(g);tankMeshes.delete(id);} const r=document.getElementById('result'); r.innerHTML=s.phase==='RESULT'&&s.winner?`<div class="result"><div class="card"><h1>🏆 ${s.winner.username}</h1><p>WINNER • ${s.winner.kills} KILLS</p></div></div>`:'';}
+const camera = new THREE.PerspectiveCamera(46, innerWidth / innerHeight, .1, 1000);
+camera.position.set(0, 22.5, 9.5); camera.lookAt(0, 0, 0);
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; app.appendChild(renderer.domElement);
+scene.add(new THREE.AmbientLight(0xffffff, 1.45));
+const sun = new THREE.DirectionalLight(0xffffff, 1.9); sun.position.set(12,22,12); sun.castShadow=true; scene.add(sun);
+const fill = new THREE.DirectionalLight(0x88ccff, .75); fill.position.set(-12,18,-10); scene.add(fill);
+
+const tankMeshes = new Map();
+const labelMap = new Map();
+const projectileMeshes = new Map();
+const fx = new Map();
+let state = null;
+let audioCtx = null;
+let bgmTimer = null;
+
+const themeStyle = {
+  DESERT: { ground:'#4a3522', accent:'#ff8c00', fog:'#3a2712' },
+  FROZEN_ICE: { ground:'#1e3d59', accent:'#00f2fe', fog:'#071e3d' },
+  VOLCANIC: { ground:'#18181b', accent:'#ff2e63', fog:'#110003' }
+};
+const slotColors = [0xff2d55,0x00ff66,0x00e5ff,0xff9900,0xb56cff];
+
+function initAudio(){
+  if(audioCtx) { if(audioCtx.state==='suspended') audioCtx.resume(); return; }
+  const C = window.AudioContext || window.webkitAudioContext; if(!C) return;
+  audioCtx = new C();
+  startBgm();
+}
+function tone(freq, duration=.15, type='sawtooth', volume=.08, endFreq=null){
+  if(!audioCtx) return; const now=audioCtx.currentTime, o=audioCtx.createOscillator(), g=audioCtx.createGain();
+  o.type=type; o.frequency.setValueAtTime(freq,now); if(endFreq) o.frequency.exponentialRampToValueAtTime(endFreq,now+duration);
+  g.gain.setValueAtTime(volume,now); g.gain.exponentialRampToValueAtTime(.001,now+duration); o.connect(g); g.connect(audioCtx.destination); o.start(now); o.stop(now+duration);
+}
+function noise(duration=.15, volume=.12, low=1200){
+  if(!audioCtx) return; const n=audioCtx.createBufferSource(), b=audioCtx.createBuffer(1,audioCtx.sampleRate*duration,audioCtx.sampleRate), d=b.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1; n.buffer=b;
+  const f=audioCtx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=low; const g=audioCtx.createGain(); g.gain.setValueAtTime(volume,audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+duration); n.connect(f);f.connect(g);g.connect(audioCtx.destination);n.start();
+}
+function shot(level=1){ tone(700+level*250,.18,level>=3?'sawtooth':'square',.11,90); tone(160,.12,'sine',.13,35); }
+function hit(){ tone(2200,.14,'triangle',.16,450); tone(240,.18,'sawtooth',.16,40); noise(.08,.10,2200); }
+function explosion(){ tone(200,.55,'sawtooth',.22,20); noise(.5,.22,1400); }
+function heal(){ [523.25,659.25,783.99,1046.5].forEach((n,i)=>setTimeout(()=>tone(n,.18,'sine',.08),i*60)); }
+function evolution(){ [440,554,659,880,1108,1318].forEach((n,i)=>setTimeout(()=>tone(n,.28,'sawtooth',.08),i*80)); }
+function startBgm(){
+  if(bgmTimer || !audioCtx) return; let step=0;
+  bgmTimer=setInterval(()=>{ if(!audioCtx||audioCtx.state==='suspended')return; const bass=[82.41,82.41,98,82.41,110,82.41,123.47,110]; if(step%2===0)tone(bass[(step/2)%bass.length],.14,'sawtooth',.035,140); if(step%4===0)tone(140,.09,'sine',.045,30); if(step%2===1)noise(.035,.018,5500); if(step%4===0)tone([329.63,392,440,493.88,587.33,659.25][(step/4)%6],.22,'sawtooth',.025); step++; },117);
+}
+addEventListener('pointerdown', initAudio, {once:true}); addEventListener('keydown', initAudio, {once:true});
+
+function groundFor(theme){
+  const s=themeStyle[theme.id]||themeStyle.DESERT;
+  scene.background=new THREE.Color(s.fog); scene.fog=new THREE.Fog(s.fog,35,90);
+  const g=new THREE.Mesh(new THREE.PlaneGeometry(16.4,16.4),new THREE.MeshStandardMaterial({color:s.ground,roughness:.4,metalness:.5}));
+  g.rotation.x=-Math.PI/2; g.receiveShadow=true; g.userData.arena=true; return g;
+}
+let ground=groundFor({id:'DESERT'}); scene.add(ground);
+const grid=new THREE.GridHelper(16,16,0xff8c00,0x5b4630); grid.position.y=.02; scene.add(grid);
+
+function tankMaterial(color, level){ return new THREE.MeshStandardMaterial({color, roughness:.55, metalness:.35, emissive: level>=3 ? color : 0x000000, emissiveIntensity: level>=3 ? .08 : 0}); }
+function makeTank(p){
+  const g=new THREE.Group(); g.userData.playerId=p.id;
+  const body=new THREE.Mesh(new THREE.BoxGeometry(1.35,.5,1.8),tankMaterial(slotColors[p.slot%5],p.evolution)); body.position.y=.35; body.castShadow=true; g.add(body);
+  const turret=new THREE.Mesh(new THREE.CylinderGeometry(.48,.48,.25,16),tankMaterial(slotColors[p.slot%5],p.evolution)); turret.rotation.x=Math.PI/2; turret.position.y=.7; turret.castShadow=true; g.add(turret);
+  const barrels=[]; const count=Math.max(1,Math.min(4,p.evolution));
+  const offsets=count===1?[0]:count===2?[-.22,.22]:count===3?[-.3,0,.3]:[-.36,-.12,.12,.36];
+  offsets.forEach(o=>{const b=new THREE.Mesh(new THREE.BoxGeometry(.15,.15,1.2),tankMaterial(slotColors[p.slot%5],p.evolution)); b.position.set(o,.72,.65); b.castShadow=true; g.add(b); barrels.push(b);});
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(.55,.045,8,24),new THREE.MeshBasicMaterial({color:slotColors[p.slot%5]})); ring.rotation.x=Math.PI/2; ring.position.y=.88; g.add(ring);
+  g.scale.setScalar(1+(p.evolution-1)*.08); scene.add(g); tankMeshes.set(p.id,g);
+  const label=document.createElement('div'); label.className='tank-label'; label.innerHTML=`<span class="name"></span><span class="hearts"></span>`; labels.appendChild(label); labelMap.set(p.id,label);
+  return g;
+}
+function removeTank(id){ const g=tankMeshes.get(id); if(g){scene.remove(g);tankMeshes.delete(id);} const l=labelMap.get(id); if(l){l.remove();labelMap.delete(id);} }
+function updateTank(p){
+  const g=tankMeshes.get(p.id)||makeTank(p); g.position.set(p.x,0,p.z); g.rotation.y=-THREE.MathUtils.degToRad(p.angle); g.visible=p.status==='ALIVE';
+  const target=1+(p.evolution-1)*.08; g.scale.lerp(new THREE.Vector3(target,target,target),.2);
+  const l=labelMap.get(p.id); if(l){l.querySelector('.name').textContent=`@${p.username} • LV${p.evolution}`; l.querySelector('.hearts').textContent=`${'❤️'.repeat(Math.max(0,p.hearts))}${'🖤'.repeat(Math.max(0,p.maxHearts-p.hearts))}`; l.style.display=p.status==='ALIVE'?'block':'none';}
+}
+function updateProjectiles(list){
+  const seen=new Set();
+  for(const b of list){ seen.add(b.id); let m=projectileMeshes.get(b.id); if(!m){m=new THREE.Mesh(new THREE.SphereGeometry(.11,8,8),new THREE.MeshBasicMaterial({color:b.boosted?0xffd000:b.ownerColor||0xffffff})); scene.add(m); projectileMeshes.set(b.id,m); shot(b.evolution||1);} m.position.set(b.x,.72,b.z); }
+  for(const [id,m] of projectileMeshes) if(!seen.has(id)){scene.remove(m);projectileMeshes.delete(id);}
+}
+function spawnFx(e){
+  const el=document.createElement('div'); el.className='effect'; el.textContent=e.text||({MUZZLE:'✦',HIT:'💥',EXPLOSION:'💥',HEAL:'❤️',EVOLUTION:'⚡',SPECIAL:'⚡',BUFF:'⚡',SPAWN:'✨'}[e.type]||'✦'); el.style.color=e.color||'#fff'; labels.appendChild(el);
+  const started=performance.now(); fx.set(e.id,{el,e,started});
+  if(e.type==='HIT')hit(); if(e.type==='EXPLOSION')explosion(); if(e.type==='HEAL')heal(); if(e.type==='EVOLUTION'||e.type==='SPECIAL')evolution();
+}
+function project(v){ v.project(camera); return {x:(v.x*.5+.5)*innerWidth,y:(-v.y*.5+.5)*innerHeight}; }
+function updateLabels(){ for(const [id,l] of labelMap){const g=tankMeshes.get(id); if(!g||!g.visible)continue; const p=project(g.position.clone().add(new THREE.Vector3(0,1.8,0))); l.style.left=`${p.x}px`;l.style.top=`${p.y}px`; } for(const [id,o] of fx){const age=performance.now()-o.started; const p=project(new THREE.Vector3(o.e.position.x,.8,o.e.position.z));o.el.style.left=`${p.x}px`;o.el.style.top=`${p.y-age*.035}px`; if(age>o.e.durationMs){o.el.remove();fx.delete(id);} } }
+function update(s){
+  state=s; const theme=s.theme||{name:'Arena',id:'DESERT'}; document.getElementById('theme').textContent=theme.name; document.getElementById('count').textContent=`${s.players.length}/${s.maxPlayers||5} TANKS`; const m=Math.floor(s.remaining/60),sec=s.remaining%60; document.getElementById('timer').textContent=`${m}:${String(sec).padStart(2,'0')}`;
+  for(const p of s.players) updateTank(p);
+  const seen=new Set(s.players.map(p=>p.id)); for(const id of tankMeshes.keys()) if(!seen.has(id)) removeTank(id);
+  updateProjectiles(s.projectiles||[]); for(const e of s.effects||[]) if(!fx.has(e.id)) spawnFx(e);
+  const r=document.getElementById('result'); r.innerHTML=(s.phase==='MATCH_END'||s.phase==='RESULT')&&s.winner?`<div class="result"><div class="card"><h1>🏆 @${s.winner.username}</h1><p>VICTORY • ${s.winner.kills} KILLS • ${s.winner.hearts} ❤️ • LV${s.winner.evolution}</p></div></div>`:'';
+}
 const ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`); ws.onmessage=e=>{const x=JSON.parse(e.data);if(x.type==='STATE')update(x.data)}; fetch('/api/status').then(r=>r.json()).then(update);
-addEventListener('resize',()=>{camera.left=-14;camera.right=14;camera.top=10;camera.bottom=-10;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
-function animate(){requestAnimationFrame(animate);renderer.render(scene,camera)} animate();
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+function animate(){requestAnimationFrame(animate);updateLabels();renderer.render(scene,camera)} animate();
