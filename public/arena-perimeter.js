@@ -6,7 +6,6 @@ export function createArenaPerimeter(arenaSize = 16.8) {
   const half = arenaSize / 2;
   const wallHeight = 0.65;
   const wallThick = 0.55;
-
   const darkSteelMat = new THREE.MeshStandardMaterial({ color: 0x181e28, metalness: 0.85, roughness: 0.25 });
   const armorPlateMat = new THREE.MeshStandardMaterial({ color: 0x252e3d, metalness: 0.7, roughness: 0.35 });
   const hazardYellowMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0x78350f, emissiveIntensity: 0.3, metalness: 0.5, roughness: 0.4 });
@@ -20,174 +19,24 @@ export function createArenaPerimeter(arenaSize = 16.8) {
 
   const apronGeo = new THREE.BoxGeometry(arenaSize + 2.4, 0.4, arenaSize + 2.4);
   const apronMat = new THREE.MeshStandardMaterial({ color: 0x0e131b, metalness: 0.9, roughness: 0.6 });
-  const apronMesh = new THREE.Mesh(apronGeo, apronMat);
-  apronMesh.position.y = -0.21;
-  apronMesh.receiveShadow = true;
-  rootGroup.add(apronMesh);
+  const apronMesh = new THREE.Mesh(apronGeo, apronMat); apronMesh.position.y=-0.21; apronMesh.receiveShadow=true; rootGroup.add(apronMesh);
+  const outerBorderGeo = new THREE.RingGeometry(half+0.3,half+1.1,4);
+  const outerBorderMat = new THREE.MeshStandardMaterial({color:0x1e2634,metalness:0.75,roughness:0.4,side:THREE.DoubleSide});
+  const outerBorderMesh = new THREE.Mesh(outerBorderGeo,outerBorderMat); outerBorderMesh.rotation.x=-Math.PI/2; outerBorderMesh.rotation.z=Math.PI/4; outerBorderMesh.position.y=-0.005; rootGroup.add(outerBorderMesh);
 
-  const outerBorderGeo = new THREE.RingGeometry(half + 0.3, half + 1.1, 4);
-  const outerBorderMat = new THREE.MeshStandardMaterial({ color: 0x1e2634, metalness: 0.75, roughness: 0.4, side: THREE.DoubleSide });
-  const outerBorderMesh = new THREE.Mesh(outerBorderGeo, outerBorderMat);
-  outerBorderMesh.rotation.x = -Math.PI / 2;
-  outerBorderMesh.rotation.z = Math.PI / 4;
-  outerBorderMesh.position.y = -0.005;
-  rootGroup.add(outerBorderMesh);
+  const wallBaseGeo=new THREE.BoxGeometry(arenaSize,wallHeight,wallThick), wallCapGeo=new THREE.BoxGeometry(arenaSize+0.1,0.1,wallThick+0.08), railGeo=new THREE.CylinderGeometry(0.04,0.04,arenaSize,8), forcefieldGeo=new THREE.PlaneGeometry(arenaSize,0.7);
+  const createWallSide=(rotationY,pos)=>{const sideGroup=new THREE.Group();sideGroup.position.copy(pos);sideGroup.rotation.y=rotationY;const wall=new THREE.Mesh(wallBaseGeo,darkSteelMat);wall.position.y=wallHeight/2;wall.castShadow=true;wall.receiveShadow=true;sideGroup.add(wall);const cap=new THREE.Mesh(wallCapGeo,armorPlateMat);cap.position.y=wallHeight+0.04;sideGroup.add(cap);const rail=new THREE.Mesh(railGeo,energyRailMat);rail.rotation.z=Math.PI/2;rail.position.y=wallHeight+0.11;sideGroup.add(rail);const field=new THREE.Mesh(forcefieldGeo,forcefieldMat);field.position.set(0,wallHeight+0.45,-wallThick/2+0.02);sideGroup.add(field);const ribGeo=new THREE.BoxGeometry(0.18,wallHeight+0.12,wallThick+0.2);for(let x=-half+2;x<=half-2;x+=2.4){const rib=new THREE.Mesh(ribGeo,armorPlateMat);rib.position.set(x,(wallHeight+0.12)/2,0);sideGroup.add(rib);const sy=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.08,0.04),hazardYellowMat);sy.position.set(x,wallHeight*.65,wallThick/2+.08);const sd=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.08,0.04),hazardDarkMat);sd.position.set(x,wallHeight*.45,wallThick/2+.08);sideGroup.add(sy,sd)}const bb=new THREE.CylinderGeometry(.08,.1,.35,8),bl=new THREE.CylinderGeometry(.07,.07,.08,8);for(let x=-half+3.2;x<=half-3.2;x+=4){const b=new THREE.Mesh(bb,darkSteelMat);b.position.set(x,.175,wallThick/2+.15);const l=new THREE.Mesh(bl,bollardLightMat);l.position.set(x,.38,wallThick/2+.15);l.name='bollardLight';sideGroup.add(b,l)}return sideGroup};
+  rootGroup.add(createWallSide(0,new THREE.Vector3(0,0,-half)),createWallSide(Math.PI,new THREE.Vector3(0,0,half)),createWallSide(-Math.PI/2,new THREE.Vector3(half,0,0)),createWallSide(Math.PI/2,new THREE.Vector3(-half,0,0)));
 
-  const wallBaseGeo = new THREE.BoxGeometry(arenaSize, wallHeight, wallThick);
-  const wallCapGeo = new THREE.BoxGeometry(arenaSize + 0.1, 0.1, wallThick + 0.08);
-  const railGeo = new THREE.CylinderGeometry(0.04, 0.04, arenaSize, 8);
-  const forcefieldGeo = new THREE.PlaneGeometry(arenaSize, 0.7);
+  const radarArrays=[];
+  const corners=[{x:-half,z:-half,r:Math.PI/4},{x:half,z:-half,r:-Math.PI/4},{x:half,z:half,r:-3*Math.PI/4},{x:-half,z:half,r:3*Math.PI/4}];
+  corners.forEach(cp=>{const towerGroup=new THREE.Group();towerGroup.position.set(cp.x,0,cp.z);towerGroup.rotation.y=cp.r;const tower=new THREE.Mesh(new THREE.CylinderGeometry(.85,1.1,1.6,6),armorPlateMat);tower.position.y=.8;tower.castShadow=true;towerGroup.add(tower);const balcony=new THREE.Mesh(new THREE.CylinderGeometry(1,.85,.15,6),darkSteelMat);balcony.position.y=1.65;towerGroup.add(balcony);const ring=new THREE.Mesh(new THREE.TorusGeometry(.92,.03,6,12),energyRailMat);ring.rotation.x=Math.PI/2;ring.position.y=.85;towerGroup.add(ring);const housing=new THREE.Mesh(new THREE.BoxGeometry(.4,.28,.35),darkSteelMat);housing.rotation.x=Math.PI/6;housing.position.set(0,1.85,.35);const l1=new THREE.Mesh(new THREE.CylinderGeometry(.09,.09,.05,12),floodlightLensMat);l1.rotation.x=Math.PI/2;l1.position.set(-.11,0,.18);const l2=l1.clone();l2.position.x=.11;housing.add(l1,l2);towerGroup.add(housing);const radar=new THREE.Group();radar.position.set(0,1.95,-.2);const mast=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.5,8),darkSteelMat);mast.position.y=.25;radar.add(mast);const dish=new THREE.Mesh(new THREE.CylinderGeometry(.28,.05,.15,12,1,true),darkSteelMat);dish.rotation.x=Math.PI/3;dish.position.y=.55;radar.add(dish);const horn=new THREE.Mesh(new THREE.ConeGeometry(.04,.18,8),energyRailMat);horn.rotation.x=Math.PI/3;horn.position.set(0,.62,.1);radar.add(horn);towerGroup.add(radar);radarArrays.push(radar);const beacon=new THREE.Mesh(new THREE.SphereGeometry(.09,8,8),beaconStrobeMat);beacon.position.set(0,2.7,-.2);towerGroup.add(beacon);rootGroup.add(towerGroup)});
 
-  const createWallSide = (rotationY, pos) => {
-    const sideGroup = new THREE.Group();
-    sideGroup.position.copy(pos);
-    sideGroup.rotation.y = rotationY;
-    const wallMesh = new THREE.Mesh(wallBaseGeo, darkSteelMat);
-    wallMesh.position.y = wallHeight / 2;
-    wallMesh.castShadow = true;
-    wallMesh.receiveShadow = true;
-    sideGroup.add(wallMesh);
-    const capMesh = new THREE.Mesh(wallCapGeo, armorPlateMat);
-    capMesh.position.y = wallHeight + 0.04;
-    sideGroup.add(capMesh);
-    const railMesh = new THREE.Mesh(railGeo, energyRailMat);
-    railMesh.rotation.z = Math.PI / 2;
-    railMesh.position.y = wallHeight + 0.11;
-    sideGroup.add(railMesh);
-    const forcefieldMesh = new THREE.Mesh(forcefieldGeo, forcefieldMat);
-    forcefieldMesh.position.set(0, wallHeight + 0.45, -wallThick / 2 + 0.02);
-    sideGroup.add(forcefieldMesh);
-    const ribGeo = new THREE.BoxGeometry(0.18, wallHeight + 0.12, wallThick + 0.2);
-    for (let x = -half + 2.0; x <= half - 2.0; x += 2.4) {
-      const rib = new THREE.Mesh(ribGeo, armorPlateMat);
-      rib.position.set(x, (wallHeight + 0.12) / 2, 0);
-      sideGroup.add(rib);
-      const stripeYellow = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.04), hazardYellowMat);
-      stripeYellow.position.set(x, wallHeight * 0.65, wallThick / 2 + 0.08);
-      const stripeDark = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.04), hazardDarkMat);
-      stripeDark.position.set(x, wallHeight * 0.45, wallThick / 2 + 0.08);
-      sideGroup.add(stripeYellow, stripeDark);
-    }
-    const bollardBaseGeo = new THREE.CylinderGeometry(0.08, 0.1, 0.35, 8);
-    const bollardLightGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.08, 8);
-    for (let x = -half + 3.2; x <= half - 3.2; x += 4.0) {
-      const bBase = new THREE.Mesh(bollardBaseGeo, darkSteelMat);
-      bBase.position.set(x, 0.175, wallThick / 2 + 0.15);
-      const bLight = new THREE.Mesh(bollardLightGeo, bollardLightMat);
-      bLight.position.set(x, 0.38, wallThick / 2 + 0.15);
-      bLight.name = 'bollardLight';
-      sideGroup.add(bBase, bLight);
-    }
-    return sideGroup;
-  };
+  const hedgehog=()=>{const g=new THREE.Group(),geo=new THREE.BoxGeometry(.1,1.1,.1);const a=new THREE.Mesh(geo,czechHedgehogMat);a.rotation.z=Math.PI/4;const b=new THREE.Mesh(geo,czechHedgehogMat);b.rotation.z=-Math.PI/4;const c=new THREE.Mesh(geo,czechHedgehogMat);c.rotation.x=Math.PI/4;g.add(a,b,c);g.scale.set(.7,.7,.7);g.position.y=.35;return g};
+  [{x:-half+1.2,z:-half+3,r:.3},{x:half-1.2,z:-half+3,r:-.5},{x:half-1.2,z:half-3,r:1.1},{x:-half+1.2,z:half-3,r:-.8}].forEach(p=>{const h=hedgehog();h.position.set(p.x,.3,p.z);h.rotation.y=p.r;rootGroup.add(h)});
+  const generator=()=>{const g=new THREE.Group(),box=new THREE.Mesh(new THREE.BoxGeometry(.9,.55,.5),darkSteelMat);box.position.y=.275;g.add(box);const vent=new THREE.Mesh(new THREE.PlaneGeometry(.7,.25),new THREE.MeshBasicMaterial({color:0x00f0ff}));vent.position.set(0,.3,.255);g.add(vent);const light=new THREE.Mesh(new THREE.SphereGeometry(.04,6,6),beaconStrobeMat);light.position.set(.3,.58,.15);g.add(light);return g};const gn=generator();gn.position.set(3.5,0,-half+.4);const gs=generator();gs.rotation.y=Math.PI;gs.position.set(-3.5,0,half-.4);rootGroup.add(gn,gs);
 
-  rootGroup.add(
-    createWallSide(0, new THREE.Vector3(0, 0, -half)),
-    createWallSide(Math.PI, new THREE.Vector3(0, 0, half)),
-    createWallSide(-Math.PI / 2, new THREE.Vector3(half, 0, 0)),
-    createWallSide(Math.PI / 2, new THREE.Vector3(-half, 0, 0))
-  );
+  const crystal=new THREE.Mesh(new THREE.OctahedronGeometry(.65,.1),new THREE.MeshStandardMaterial({color:0x00e5ff,emissive:0x00e5ff,emissiveIntensity:.65,metalness:.4,roughness:.2,transparent:true,opacity:.82}));crystal.name='centerCrystal';crystal.position.y=.8;rootGroup.add(crystal);const crystalRing=new THREE.Mesh(new THREE.TorusGeometry(1.15,.035,8,48),new THREE.MeshBasicMaterial({color:0x00e5ff,transparent:true,opacity:.65}));crystalRing.rotation.x=Math.PI/2;crystalRing.position.y=.08;rootGroup.add(crystalRing);
 
-  const radarArrays = [];
-  const beaconLights = [];
-  const cornerPositions = [
-    { x: -half, z: -half, rotY: Math.PI / 4 },
-    { x: half, z: -half, rotY: -Math.PI / 4 },
-    { x: half, z: half, rotY: -3 * Math.PI / 4 },
-    { x: -half, z: half, rotY: 3 * Math.PI / 4 }
-  ];
-
-  cornerPositions.forEach(cp => {
-    const towerGroup = new THREE.Group();
-    towerGroup.position.set(cp.x, 0, cp.z);
-    towerGroup.rotation.y = cp.rotY;
-    const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.1, 1.6, 6), armorPlateMat);
-    tower.position.y = 0.8;
-    tower.castShadow = true;
-    towerGroup.add(tower);
-    const balcony = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 0.85, 0.15, 6), darkSteelMat);
-    balcony.position.y = 1.65;
-    towerGroup.add(balcony);
-    const ringGlow = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.03, 6, 12), energyRailMat);
-    ringGlow.rotation.x = Math.PI / 2;
-    ringGlow.position.y = 0.85;
-    towerGroup.add(ringGlow);
-    const flHousing = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.28, 0.35), darkSteelMat);
-    flHousing.rotation.x = Math.PI / 6;
-    flHousing.position.set(0, 1.85, 0.35);
-    const flLens1 = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.05, 12), floodlightLensMat);
-    flLens1.rotation.x = Math.PI / 2;
-    flLens1.position.set(-0.11, 0, 0.18);
-    const flLens2 = flLens1.clone();
-    flLens2.position.x = 0.11;
-    flHousing.add(flLens1, flLens2);
-    towerGroup.add(flHousing);
-    const radarGroup = new THREE.Group();
-    radarGroup.position.set(0, 1.95, -0.2);
-    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 8), darkSteelMat);
-    mast.position.y = 0.25;
-    radarGroup.add(mast);
-    const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.05, 0.15, 12, 1, true), darkSteelMat);
-    dish.rotation.x = Math.PI / 3;
-    dish.position.y = 0.55;
-    radarGroup.add(dish);
-    const feedHorn = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.18, 8), energyRailMat);
-    feedHorn.rotation.x = Math.PI / 3;
-    feedHorn.position.set(0, 0.62, 0.1);
-    radarGroup.add(feedHorn);
-    towerGroup.add(radarGroup);
-    radarArrays.push(radarGroup);
-    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), beaconStrobeMat);
-    beacon.position.set(0, 2.7, -0.2);
-    towerGroup.add(beacon);
-    beaconLights.push(beacon);
-    rootGroup.add(towerGroup);
-  });
-
-  const createCzechHedgehog = () => {
-    const hedgehog = new THREE.Group();
-    const beamGeo = new THREE.BoxGeometry(0.1, 1.1, 0.1);
-    const b1 = new THREE.Mesh(beamGeo, czechHedgehogMat); b1.rotation.z = Math.PI / 4;
-    const b2 = new THREE.Mesh(beamGeo, czechHedgehogMat); b2.rotation.z = -Math.PI / 4;
-    const b3 = new THREE.Mesh(beamGeo, czechHedgehogMat); b3.rotation.x = Math.PI / 4;
-    hedgehog.add(b1, b2, b3); hedgehog.scale.set(0.7, 0.7, 0.7); hedgehog.position.y = 0.35;
-    return hedgehog;
-  };
-  [
-    { x: -half + 1.2, z: -half + 3.0, rot: 0.3 },
-    { x: half - 1.2, z: -half + 3.0, rot: -0.5 },
-    { x: half - 1.2, z: half - 3.0, rot: 1.1 },
-    { x: -half + 1.2, z: half - 3.0, rot: -0.8 }
-  ].forEach(hp => { const h = createCzechHedgehog(); h.position.set(hp.x, 0.3, hp.z); h.rotation.y = hp.rot; rootGroup.add(h); });
-
-  const createGeneratorStation = () => {
-    const genGroup = new THREE.Group();
-    const box = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.55, 0.5), darkSteelMat);
-    box.position.y = 0.275;
-    genGroup.add(box);
-    const vent = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.25), new THREE.MeshBasicMaterial({ color: 0x00f0ff }));
-    vent.position.set(0, 0.3, 0.255);
-    genGroup.add(vent);
-    const indLight = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 6), beaconStrobeMat);
-    indLight.position.set(0.3, 0.58, 0.15);
-    genGroup.add(indLight);
-    return genGroup;
-  };
-  const genNorth = createGeneratorStation(); genNorth.position.set(3.5, 0, -half + 0.4);
-  const genSouth = createGeneratorStation(); genSouth.rotation.y = Math.PI; genSouth.position.set(-3.5, 0, half - 0.4);
-  rootGroup.add(genNorth, genSouth);
-
-  return {
-    group: rootGroup,
-    update(dt, time) {
-      for (const radar of radarArrays) radar.rotation.y += 0.025;
-      beaconStrobeMat.emissiveIntensity = Math.max(0.2, 1.0 + Math.sin(time * 6) * 1.8);
-      forcefieldMat.opacity = 0.15 + Math.sin(time * 2.5) * 0.08;
-      bollardLightMat.emissiveIntensity = 1.2 + Math.sin(time * 3.5) * 0.6;
-    },
-    dispose() {
-      [apronGeo, outerBorderGeo, wallBaseGeo, wallCapGeo, railGeo, forcefieldGeo].forEach(g => g.dispose());
-      [apronMat, outerBorderMat, darkSteelMat, armorPlateMat, hazardYellowMat, hazardDarkMat, energyRailMat, forcefieldMat, floodlightLensMat, beaconStrobeMat, bollardLightMat, czechHedgehogMat].forEach(m => m.dispose());
-    }
-  };
+  return {group:rootGroup,update(dt,time){for(const r of radarArrays)r.rotation.y+=.025;beaconStrobeMat.emissiveIntensity=Math.max(.2,1+Math.sin(time*6)*1.8);forcefieldMat.opacity=.15+Math.sin(time*2.5)*.08;bollardLightMat.emissiveIntensity=1.2+Math.sin(time*3.5)*.6;crystal.rotation.y+=dt*.8;crystal.position.y=.8+Math.sin(time*2)*.12;crystalRing.material.opacity=.45+Math.sin(time*3)*.2},dispose(){[apronGeo,outerBorderGeo,wallBaseGeo,wallCapGeo,railGeo,forcefieldGeo].forEach(g=>g.dispose());[apronMat,outerBorderMat,darkSteelMat,armorPlateMat,hazardYellowMat,hazardDarkMat,energyRailMat,forcefieldMat,floodlightLensMat,beaconStrobeMat,bollardLightMat,czechHedgehogMat].forEach(m=>m.dispose())}};
 }
