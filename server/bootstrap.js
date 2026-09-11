@@ -1,13 +1,13 @@
 import { existsSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const viteBin = fileURLToPath(new URL('../node_modules/vite/bin/vite.js', import.meta.url));
 const syncScript = fileURLToPath(new URL('../scripts/sync-frontend.mjs', import.meta.url));
 
 function run(label, command, args) {
   console.log(label);
-  const r = spawnSync(command, args, { stdio: 'inherit', windowsHide: false });
+  const r = spawnSync(command, args, { stdio: 'inherit', windowsHide: false, shell: false });
   if (r.error) {
     console.error(`${label} failed: ${r.error.message}`);
     process.exit(1);
@@ -18,15 +18,15 @@ function run(label, command, args) {
   }
 }
 
-// node_modules may exist but be incomplete after an interrupted install.
 const depsReady =
   existsSync(new URL('../node_modules/express/package.json', import.meta.url)) &&
   existsSync(new URL('../node_modules/vite/bin/vite.js', import.meta.url)) &&
   existsSync(new URL('../node_modules/react/package.json', import.meta.url));
 
 if (!depsReady) {
-  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  run('Dependencies incomplete — running npm install...', npm, ['install']);
+  // npm.cmd can return EINVAL when spawned directly on Windows.
+  // Resolve it through cmd.exe, matching the normal Windows npm invocation.
+  run('Dependencies incomplete — running npm install...', process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm install']);
 }
 
 run('Syncing original Battle-Tank frontend...', process.execPath, [syncScript]);
