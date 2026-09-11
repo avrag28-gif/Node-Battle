@@ -1,13 +1,13 @@
 {
   "name": "node-battle",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "TikTok Live tank battle arena and leaderboard server",
   "type": "module",
   "scripts": {
-    "live": "node server/index.js",
+    "live": "node server/bootstrap.js",
     "dev": "node --watch server/index.js",
-    "start": "node server/index.js"
+    "start": "node server/bootstrap.js"
   },
   "dependencies": {
     "dotenv": "^17.2.3",
