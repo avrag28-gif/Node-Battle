@@ -1,7 +1,7 @@
 {
   "name": "node-battle",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "scripts": {
     "sync:frontend": "node scripts/sync-frontend.mjs",
@@ -21,6 +21,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "three": "^0.186.0",
+    "tiktok-live-connector": "^2.4.4",
     "vite": "^6.2.3",
     "ws": "^8.21.3"
   },
