@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import { Game } from './game.js';
+import { startTikTokBridge, getTikTokBridgeStatus } from './tiktok.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -33,7 +34,8 @@ function frontendState() {
   const effects = s.effects.map(e => ({ ...e, position:{x:e.position.x,y:e.position.z} }));
   const leaderboard = [...players].sort((a,b)=>b.kills-a.kills||b.hearts-a.hearts||b.damageDealt-a.damageDealt||b.evolutionLevel-a.evolutionLevel);
   const config = { MATCH_DURATION_SEC:240, MAX_PLAYERS:4, START_COUNTDOWN_SEC:5, MAX_HEARTS:5, EVOLUTION_KILL_THRESHOLDS:{LEVEL_1:0,LEVEL_2:3,LEVEL_3:7,LEVEL_4:12}, ATTACK_COOLDOWN_MS:50, HEAL_COOLDOWN_MS:800, HEAL_AMOUNT:1, DAMAGE_BUFF_DURATION_SEC:10, AFK_TIMEOUT_MS:60000, PROJECTILE_SPEED:19, PROJECTILE_RANGE:30, GIFT_MAP:{JOIN_GIFT:'PANDA',ATTACK_GIFT:'ROSE',HEAL_GIFT:'DONUT',EVOLVE_GIFT:'TOPI_KUMIS',DAMAGE_BUFF_GIFT:'PETIR',REVIVE_GIFT:'DRAGON',SPECIAL_GIFT:'SPECIAL'}, AUTO_BOT_MODE:botMode };
-  return { matchId:s.matchId, state:s.phase, timerSec:Math.floor(s.remaining), theme:s.theme.id, players, projectiles, effects, leaderboard, globalLeaderboard:s.globalLeaderboard, feed:s.feed, winner:s.winner?playerById.get(s.winner.platformUserId)||null:undefined, config, connectedTikTokUser:connectedTikTokUser||undefined, isTikTokConnected:Boolean(connectedTikTokUser), lastUpdate:Date.now(), maxPlayers:4, maxHearts:5, phase:s.phase, remaining:s.remaining, countdown:s.countdown, currentLeaderboard:s.currentLeaderboard };
+  const tikTok = getTikTokBridgeStatus();
+  return { matchId:s.matchId, state:s.phase, timerSec:Math.floor(s.remaining), theme:s.theme.id, players, projectiles, effects, leaderboard, globalLeaderboard:s.globalLeaderboard, feed:s.feed, winner:s.winner?playerById.get(s.winner.platformUserId)||null:undefined, config, connectedTikTokUser:connectedTikTokUser||undefined, isTikTokConnected:tikTok.connected, tikTokUsername:tikTok.username, phase:s.phase, remaining:s.remaining, countdown:s.countdown, currentLeaderboard:s.currentLeaderboard, maxPlayers:4, maxHearts:5, lastUpdate:Date.now() };
 }
 
 app.get('/api/status', (_,res)=>{res.set('Cache-Control','no-store,no-cache,must-revalidate,proxy-revalidate');res.json(frontendState());});
@@ -77,5 +79,11 @@ function scheduleBroadcast(){
 
 wss.on('connection',ws=>{ws.send(JSON.stringify({type:'GAME_STATE',data:frontendState()}));});
 game.subscribe(()=>scheduleBroadcast());
+startTikTokBridge(event => {
+  if (!event?.type || !event.platformUserId) return;
+  if (event.type === 'PLAYER_JOIN') connectedTikTokUser = '@' + event.username;
+  console.log(`[TikTok -> Game] ${event.type} @${event.username}${event.payload?.giftName ? ` (${event.payload.giftName})` : ''}`);
+  game.queueEvent(event);
+});
 setInterval(()=>game.tick(1/30),1000/30);
 server.listen(PORT,'0.0.0.0',()=>console.log(`Node-Battle running: http://localhost:${PORT}`));
